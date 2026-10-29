@@ -62,12 +62,15 @@
     ['no', 'sucede', 'que'], ['no', 'es', 'el', 'caso', 'que'], ['es', 'falso', 'que'], ['es', 'mentira', 'que']
   ];
   const IFF = [['si', 'y', 'solo', 'si'], ['si', 'y', 'solamente', 'si'], ['si', 'y', 'unicamente', 'si'], ['sii']];
+  const LEAD = [['si'], ['cuando'], ['siempre', 'que'], ['en', 'caso', 'de', 'que'], ['en', 'el', 'caso', 'de', 'que']];
   // [frase, tipo]  tipo: 'lr' = izq -> der ; 'rl' = der -> izq ; 'unless' = (no der) -> izq
   const TRAIL = [
     [['implica', 'que'], 'lr'], [['implica'], 'lr'],
     [['solo', 'si'], 'lr'], [['solamente', 'si'], 'lr'], [['unicamente', 'si'], 'lr'], [['solo', 'cuando'], 'lr'],
-    [['a', 'menos', 'que'], 'unless'], [['salvo', 'que'], 'unless'],
-    [['siempre', 'que'], 'rl'], [['en', 'caso', 'de', 'que'], 'rl'], [['cuando'], 'rl'], [['si'], 'rl'],
+    [['es', 'suficiente', 'para'], 'lr'], [['es', 'condicion', 'suficiente', 'para'], 'lr'],
+    [['es', 'necesario', 'para'], 'rl'], [['es', 'condicion', 'necesaria', 'para'], 'rl'],
+    [['a', 'menos', 'que'], 'unless'], [['a', 'no', 'ser', 'que'], 'unless'], [['salvo', 'que'], 'unless'], [['excepto', 'que'], 'unless'],
+    [['siempre', 'y', 'cuando'], 'rl'], [['siempre', 'que'], 'rl'], [['en', 'caso', 'de', 'que'], 'rl'], [['cuando'], 'rl'], [['si'], 'rl'],
     [['entonces'], 'lr']
   ];
 
@@ -100,15 +103,16 @@
       if (i > 0 && i + ph.length < toks.length)
         return mk.iff(parse(toks.slice(0, i), ctx), parse(toks.slice(i + ph.length), ctx));
     }
-    // 3) "Si A, entonces B"
-    if (nt(toks[0]) === 'si') {
-      const rest = toks.slice(1);
+    // 3) "Si A, entonces B" / "Cuando A, B" / "Siempre que A, B" / "En caso de que A, B"
+    const lead = LEAD.find(ph => startsWith(toks, ph));
+    if (lead) {
+      const rest = toks.slice(lead.length);
       const e = findPhrase(rest, ['entonces']);
       let ant, con;
       if (e >= 0) { ant = rest.slice(0, e); con = rest.slice(e + 1); }
       else {
         const c = rest.findIndex(isComma);
-        if (c < 0) throw new Error('En "si ..." falta "entonces" o una coma que separe la condición del resultado.');
+        if (c < 0) throw new Error('En "' + lead.join(' ') + ' ..." falta "entonces" o una coma que separe la condición del resultado.');
         ant = rest.slice(0, c); con = rest.slice(c + 1);
       }
       const A = parse(ant, ctx), B = parse(con, ctx);
@@ -145,6 +149,11 @@
     }
     // 8) negación simple: "no ..."
     if (nt(toks[0]) === 'no' && toks.length > 1) return mk.not(parse(toks.slice(1), ctx));
+    // 8b) negación después del sujeto: "Juan no viene" = ¬(Juan viene)
+    {
+      const i = toks.findIndex((t, k) => k > 0 && ['no', 'nunca', 'jamas'].includes(nt(t)));
+      if (i > 0 && toks.length > 2) return mk.not(parse(toks.slice(0, i).concat(toks.slice(i + 1)), ctx));
+    }
     // 9) átomo
     const text = toks.join(' ').replace(/\s+([,;:])/g, '$1');
     const key = nt(text).replace(/\s+/g, ' ').trim().replace(/^que /, '');
@@ -275,7 +284,7 @@
   // ---------- API ----------
   function analyze(text) {
     const ctx = newCtx(), rules = [], errors = [];
-    const sentences = text.split(/\n+/).flatMap(l => l.split(/(?<=[.!?])\s+/)).map(s => s.trim()).filter(Boolean);
+    const sentences = text.split(/\n+/).flatMap(l => l.split(/(?<=[.!?;])\s+|\s*;\s*/)).map(s => s.trim()).filter(Boolean);
     sentences.forEach(s => {
       const n0 = ctx.atoms.length;
       try {
